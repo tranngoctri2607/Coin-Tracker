@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Crypto Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <h1 class="text-2xl font-bold mb-4 text-center">Crypto Tracker</h1>
+
+  <!-- Ô nhập dữ liệu -->
+  <div class="mb-4">
+    <textarea id="inputData" rows="12" class="w-full p-2 border rounded"
+      placeholder="Copy và dán dữ liệu ở đây theo định dạng:&#10;Bitcoin (BTC)&#10;⭐1714.30"></textarea>
+    <button onclick="updateData()" class="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+      Cập nhật
+    </button>
+  </div>
+
+  <!-- Bảng giá -->
+  <table class="w-full bg-white shadow rounded text-center">
+    <thead class="bg-gray-200">
+      <tr>
+        <th class="p-2">Coin</th>
+        <th class="p-2">Giá hiện tại</th>
+        <th class="p-2">Cao nhất</th>
+        <th class="p-2">Thấp nhất</th>
+      </tr>
+    </thead>
+    <tbody id="cryptoTable"></tbody>
+  </table>
+
+  <script>
+    const cryptos = {};
+
+    function updateData() {
+      const text = document.getElementById("inputData").value.trim();
+      const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+
+      for (let i = 0; i < lines.length; i++) {
+        if (!lines[i].includes("⭐") && lines[i + 1] && lines[i + 1].includes("⭐")) {
+          const name = lines[i];
+          const price = parseFloat(lines[i + 1].replace("⭐", "").trim());
+
+          if (!cryptos[name]) {
+            cryptos[name] = { current: price, high: price, low: price };
+          } else {
+            cryptos[name].current = price;
+            cryptos[name].high = Math.max(cryptos[name].high, price);
+            cryptos[name].low = Math.min(cryptos[name].low, price);
+          }
+        }
+      }
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById("cryptoTable");
+      tbody.innerHTML = "";
+
+      for (const [name, data] of Object.entries(cryptos)) {
+        const row = `
+          <tr class="border-t">
+            <td class="p-2 font-semibold">${name}</td>
+            <td class="p-2">${data.current}</td>
+            <td class="p-2 text-green-600">${data.high}</td>
+            <td class="p-2 text-red-600">${data.low}</td>
+          </tr>
+        `;
+        tbody.innerHTML += row;
+      }
+    }
+  </script>
+</body>
+</html>
