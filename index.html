@@ -79,7 +79,14 @@
   const container = document.getElementById("cryptoCards");
   container.innerHTML = "";
 
-  for (const [name, data] of Object.entries(cryptos)) {
+  // 🔹 Sắp xếp: coin có qty > 0 lên đầu
+  const sorted = Object.entries(cryptos).sort((a, b) => {
+    if (a[1].qty > 0 && b[1].qty === 0) return -1;
+    if (b[1].qty > 0 && a[1].qty === 0) return 1;
+    return 0;
+  });
+
+  for (const [name, data] of sorted) {
     if (!data.history) data.history = [data.current]; // fix lỗi undefined
 
     // Lãi/lỗ tính sau phí
@@ -165,6 +172,7 @@
     setTimeout(() => drawChart(canvasId, data.history, changePercent), 0);
   }
 }
+
 
 
     function drawChart(canvasId, history, changePercent) {
