@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Crypto Tracker + Profit Calculator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-100 p-6">
+  <h1 class="text-2xl font-bold mb-4 text-center">Crypto Tracker + Profit Calculator</h1>
+
+  <!-- Ô nhập dữ liệu giá -->
+  <div class="mb-4">
+    <textarea id="inputData" rows="12" class="w-full p-2 border rounded"
+      placeholder="Copy và dán dữ liệu ở đây theo định dạng:&#10;Bitcoin (BTC)&#10;⭐1714.30"></textarea>
+  </div>
+
+  <!-- Vùng hiển thị card -->
+  <div id="cryptoCards" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+  <script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+
+  // 🔹 Firebase config của bạn
+  const firebaseConfig = {
+    apiKey: "AIzaSyB_ilslwakvsPLdi75QKOWgf-RPZnLXfSw",
+    authDomain: "coin-as-td.firebaseapp.com",
+    projectId: "coin-as-td",
+    storageBucket: "coin-as-td.firebasestorage.app",
+    messagingSenderId: "105960956243",
+    appId: "1:105960956243:web:e344a6490b047aff9d41a6",
+    measurementId: "G-G3JTNSE491"
+  };
+
+  // Khởi tạo Firebase
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const SELL_FEE = 5000;
+  let cryptos = {};
+  let charts = {};
+
+  // 🔹 Load dữ liệu từ Firestore khi mở web
+  async function loadData() {
+    const snap = await getDoc(doc(db, "data", "cryptos"));
+    if (snap.exists()) {
+      cryptos = snap.data();
+    } else {
+      cryptos = {};
+    }
+    renderCards();
+  }
+
+  // 🔹 Lắng nghe realtime (người khác cập nhật thì mình thấy liền)
+  function listenData() {
+    onSnapshot(doc(db, "data", "cryptos"), (snap) => {
+      if (snap.exists()) {
+        cryptos = snap.data();
+        renderCards();
+      }
+    });
+  }
+
+  // 🔹 Lưu dữ liệu lên Firestore
+  async function saveData() {
+    await setDoc(doc(db, "data", "cryptos"), cryptos);
+  }
+
+  // Khi nhập dữ liệu giá
+  document.getElementById("inputData").addEventListener("input", () => {
+    updateData();
+  });
+
+  function updateData() {
+    const text = document.getElementById("inputData").value.trim();
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l);
+
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].includes("⭐") && lines[i + 1] && lines[i + 1].includes("⭐")) {
+        const name = lines[i];
+        const price = parseFloat(lines[i + 1].replace("⭐", "").trim());
+
+        if (!cryptos[name]) {
+          cryptos[name] = { 
+            current: price, 
+            prev: price, 
+            high: price, 
+            low: price, 
+            qty: 0, 
+            buyPrice: 0, 
+            history: [price] 
+          };
+        } else {
+          cryptos[name].prev = cryptos[name].current;
+          cryptos[name].current = price;
+          cryptos[name].high = Math.max(cryptos[name].high, price);
+          cryptos[name].low = cryptos[name].low === 0 ? price : Math.min(cryptos[name].low, price);
+          if (!cryptos[name].history) cryptos[name].history = [];
+          cryptos[name].history.push(price);
+          if (cryptos[name].history.length > 20) {
+            cryptos[name].history.shift();
+          }
+        }
+      }
+    }
+
+    saveData();
+    renderCards();
+  }
+
+  function renderCards() {
+    const container = document.getElementById("cryptoCards");
+    container.innerHTML = "";
+
+    // 🔹 Coin đã mua (qty > 0) lên đầu
+    const sorted = Object.entries(cryptos).sort((a, b) => {
+      if (a[1].qty > 0 && b[1].qty === 0) return -1;
+      if (b[1].qty > 0 && a[1].qty === 0) return 1;
+      return 0;
+    });
+
+    for (const [name, data] of sorted) {
+      if (!data.history) data.history = [data.current];
+
+      // Lãi/lỗ
+      const profit = (data.qty > 0 && data.buyPrice > 0)
+        ? (data.current * data.qty) - (data.buyPrice * data.qty) - SELL_FEE
+        : 0;
+      const profitClass = profit >= 0 ? "text-green-600" : "text-red-600";
+
+      // % thay đổi giá
+      let changePercent = 0;
+      if (data.prev > 0) {
+        changePercent = ((data.current - data.prev) / data.prev) * 100;
+      }
+
+      const cardColor = changePercent >= 0 
+        ? "bg-green-100 border-green-300"
+        : "bg-red-100 border-red-300";
+
+      const changeClass = changePercent >= 0 
+        ? "text-green-600 font-semibold text-sm"
+        : "text-red-600 font-semibold text-sm";
+
+      // 🔹 Xu hướng (5 giá gần nhất)
+      let trend = "Không đủ dữ liệu";
+      let trendClass = "text-gray-600";
+      if (data.history && data.history.length >= 5) {
+        const recent = data.history.slice(-5);
+        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+        const diff = (data.current - avg) / avg * 100;
+
+        if (diff > 1) {
+          trend = "📈 Tăng";
+          trendClass = "text-green-600 font-semibold";
+        } else if (diff < -1) {
+          trend = "📉 Giảm";
+          trendClass = "text-red-600 font-semibold";
+        } else {
+          trend = "➖ Ổn định";
+          trendClass = "text-gray-600 font-semibold";
+        }
+      }
+
+      const canvasId = `chart-${name.replace(/\s+/g, '-')}`;
+
+      const card = `
+        <div class="shadow rounded-xl p-3 border text-sm ${cardColor}">
+          <h2 class="text-base font-semibold mb-1">${name}</h2>
+          <p>
+            Giá: <span class="font-bold">${data.current}</span> 
+            <span class="${changeClass} ml-1">(${changePercent.toFixed(2)}%)</span>
+          </p>
+          <p class="text-xs text-gray-700">Cao nhất: <span class="text-green-600">${data.high}</span></p>
+          <p class="text-xs text-gray-700">Thấp nhất: <span class="text-red-600">${data.low}</span></p>
+
+          <canvas id="${canvasId}" height="50"></canvas>
+
+          <p class="mt-1 ${trendClass}">Xu hướng: ${trend}</p>
+          
+          <div class="mt-1">
+            <label class="text-xs">Số lượng:</label>
+            <input type="number" min="0" value="${data.qty}" 
+              onchange="updateQty('${name}', this.value)" 
+              class="w-20 p-1 border rounded text-center ml-1 text-xs">
+          </div>
+          
+          <div class="mt-1">
+            <label class="text-xs">Giá mua:</label>
+            <input type="number" min="0" value="${data.buyPrice}" 
+              onchange="updateBuyPrice('${name}', this.value)" 
+              class="w-24 p-1 border rounded text-center ml-1 text-xs">
+          </div>
+          
+          <p class="mt-2 ${profitClass} text-sm">Lãi/Lỗ: ${profit.toFixed(2)}</p>
+        </div>
+      `;
+      container.innerHTML += card;
+
+      setTimeout(() => drawChart(canvasId, data.history, changePercent), 0);
+    }
+  }
+
+  function drawChart(canvasId, history, changePercent) {
+    const ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+
+    if (charts[canvasId]) {
+      charts[canvasId].destroy();
+    }
+
+    charts[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: history.map((_, i) => i + 1),
+        datasets: [{
+          data: history,
+          borderColor: changePercent >= 0 ? "green" : "red",
+          fill: false,
+          tension: 0.3,
+          borderWidth: 2,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { x: { display: false }, y: { display: false } },
+      }
+    });
+  }
+
+  // 🔹 Cập nhật qty và buyPrice
+  window.updateQty = function(name, value) {
+    cryptos[name].qty = parseFloat(value) || 0;
+    saveData();
+    renderCards();
+  }
+
+  window.updateBuyPrice = function(name, value) {
+    cryptos[name].buyPrice = parseFloat(value) || 0;
+    saveData();
+    renderCards();
+  }
+
+  // 🔹 Khi mở web
+  window.onload = () => {
+    loadData();
+    listenData();
+  };
+</script>
+
+
+</body>
+</html>
